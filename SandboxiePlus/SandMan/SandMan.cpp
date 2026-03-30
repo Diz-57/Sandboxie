@@ -2421,6 +2421,11 @@ SB_STATUS CSandMan::DeleteBoxContent(const CSandBoxPtr& pBox, EDelMode Mode, boo
 	}
 
 	m_iDeletingContent++;
+	if (m_pTrayIcon) {
+		bool isConnected = theAPI->IsConnected();
+		m_pTrayIcon->setIcon(GetTrayIcon(isConnected));
+		m_pTrayIcon->setToolTip(GetTrayText(isConnected));
+	}
 
 	if (Mode != eForDelete) {
 
@@ -2463,7 +2468,12 @@ SB_STATUS CSandMan::DeleteBoxContent(const CSandBoxPtr& pBox, EDelMode Mode, boo
 	}
 
 finish:
-	m_iDeletingContent--;
+	m_iDeletingContent = qMax(0, m_iDeletingContent - 1);
+	if (m_pTrayIcon) {
+		bool isConnected = theAPI->IsConnected();
+		m_pTrayIcon->setIcon(GetTrayIcon(isConnected));
+		m_pTrayIcon->setToolTip(GetTrayText(isConnected));
+	}
 	return Ret;
 }
 
@@ -2978,6 +2988,7 @@ void CSandMan::UpdateState()
 	m_iIconDisabled = -1;
 	m_bIconBusy = false;
 	m_bIconSun = false;
+	m_iDeletingContent = 0;
 
 	m_pRunBoxed->setEnabled(isConnected);
 	m_pNewBox->setEnabled(isConnected);
@@ -3518,7 +3529,15 @@ void CSandMan::OnNotAuthorized(bool bLoginRequired, bool& bRetry)
 
 void CSandMan::OnBoxDblClick(QTreeWidgetItem* pItem)
 {
-	m_pBoxView->OnDoubleClicked(theAPI->GetBoxByName(pItem->data(0, Qt::UserRole).toString()));
+	if (!pItem || !m_pBoxView || !theAPI)
+		return;
+	QString Name = pItem->data(0, Qt::UserRole).toString();
+	if (Name.isEmpty())
+		return;
+	CSandBoxPtr pBox = theAPI->GetBoxByName(Name);
+	if (pBox.isNull())
+		return;
+	m_pBoxView->OnDoubleClicked(pBox);
 }
 
 void CSandMan::OnSandBoxAction()
@@ -3526,11 +3545,11 @@ void CSandMan::OnSandBoxAction()
 	QAction* pAction = qobject_cast<QAction*>(sender());
 
 	if (pAction == m_pNewBox)
-		GetBoxView()->AddNewBox();
+		GetBoxView()->AddNewBoxAction();
 	else if (pAction == m_pNewGroup)
-		GetBoxView()->AddNewGroup();
+		GetBoxView()->AddNewGroupAction();
 	else if (pAction == m_pImportBoxes)
-		ImportMultiBoxes(this);
+		GetBoxView()->ImportBoxesAction();
 	else if (pAction == m_pExportBoxes)
 		ExportMultiBoxes(this);
 	else if (pAction == m_pRunBoxed)
