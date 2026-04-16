@@ -626,13 +626,14 @@ _FX NTSTATUS KphValidateCertificate()
         if (CertDbg) DbgPrint("Sbie Build date: %02d.%02d.%d\n", timeFiled.Day, timeFiled.Month, timeFiled.Year);
     }
 
-    LARGE_INTEGER SystemTime;
-    LARGE_INTEGER LocalTime;
-    KeQuerySystemTime(&SystemTime);
-    ExSystemTimeToLocalTime(&SystemTime, &LocalTime);
+    LARGE_INTEGER UtcTime;
+    //LARGE_INTEGER LocalTime;
+    KeQuerySystemTime(&UtcTime);
+    //ExSystemTimeToLocalTime(&UtcTime, &LocalTime);
     if (CertDbg) {
-        RtlTimeToTimeFields(&LocalTime, &timeFiled);
-        DbgPrint("Sbie Current time: %02d:%02d:%02d %02d.%02d.%d\n"
+        //RtlTimeToTimeFields(&LocalTime, &timeFiled);
+        RtlTimeToTimeFields(&UtcTime, &timeFiled);
+        DbgPrint("Sbie Current UTC time: %02d:%02d:%02d %02d.%02d.%d\n"
             , timeFiled.Hour, timeFiled.Minute, timeFiled.Second, timeFiled.Day, timeFiled.Month, timeFiled.Year);
     }
 
