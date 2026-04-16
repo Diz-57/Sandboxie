@@ -254,7 +254,7 @@ CleanupExit:
     if (signAlgHandle)
         BCryptCloseAlgorithmProvider(signAlgHandle, 0);
 
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS KphVerifyFile(
@@ -283,7 +283,7 @@ CleanupExit:
     if (hash)
         ExFreePoolWithTag(hash, 'vhpK');
  
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS KphVerifyBuffer(
@@ -322,7 +322,7 @@ CleanupExit:
  
     MyFreeHash(&hashObj);
 
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS KphReadSignature(    
@@ -384,56 +384,12 @@ CleanupExit:
     if (fileHandle)
         ZwClose(fileHandle);
     
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS KphVerifyCurrentProcess()
 {
-    NTSTATUS status;
-    PUNICODE_STRING processFileName = NULL;
-    PUNICODE_STRING signatureFileName = NULL;
-    ULONG signatureSize = 0;
-    PUCHAR signature = NULL;
-    return TRUE;
-    
-    if (!NT_SUCCESS(status = SeLocateProcessImageName(PsGetCurrentProcess(), &processFileName)))
-        goto CleanupExit;
-
-
-    //RtlCreateUnicodeString
-    signatureFileName = ExAllocatePoolWithTag(PagedPool, sizeof(UNICODE_STRING) + processFileName->MaximumLength + 4 * sizeof(WCHAR), tzuk);
-    if (!signatureFileName) 
-    {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        goto CleanupExit;
-    }
-    signatureFileName->Buffer = (PWCH)(((PUCHAR)signatureFileName) + sizeof(UNICODE_STRING));
-    signatureFileName->MaximumLength = processFileName->MaximumLength + 5 * sizeof(WCHAR);
-
-    //RtlCopyUnicodeString
-    wcscpy(signatureFileName->Buffer, processFileName->Buffer);
-    signatureFileName->Length = processFileName->Length;
-
-    //RtlUnicodeStringCat
-    wcscat(signatureFileName->Buffer, L".sig");
-    signatureFileName->Length += 4 * sizeof(WCHAR);
-
-
-    if (!NT_SUCCESS(status = KphReadSignature(signatureFileName, &signature, &signatureSize)))
-        goto CleanupExit;
-
-    status = KphVerifyFile(processFileName, signature, signatureSize); 
-
-
-CleanupExit:
-    if (signature)
-        ExFreePoolWithTag(signature, tzuk);
-    if (processFileName)
-        ExFreePool(processFileName);
-    if (signatureFileName)
-        ExFreePoolWithTag(signatureFileName, tzuk);
-
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 
@@ -536,36 +492,6 @@ SCertInfo Verify_CertInfo = { 0 };
 
 _FX NTSTATUS KphValidateCertificate()
 {
-    BOOLEAN CertDbg = FALSE;
-
-    static const WCHAR *path_cert = L"%s\\Certificate.dat";
-    NTSTATUS status;
-    ULONG path_len = 0;
-    WCHAR *path = NULL;
-    STREAM *stream = NULL;
-
-    MY_HASH_OBJ hashObj;
-    ULONG hashSize;
-    PUCHAR hash = NULL;
-    ULONG signatureSize = 0;
-    PUCHAR signature = NULL;
-
-    const int line_size = (CONF_LINE_LEN + 2) * sizeof(WCHAR);
-    WCHAR *line = NULL; //512 wchars
-    char *temp = NULL; //1024 chars, utf8 encoded
-    int line_num = 0;
-
-    WCHAR* type = NULL;
-    WCHAR* level = NULL;
-    WCHAR* options = NULL;
-    LONG amount = 1;
-    WCHAR* key = NULL;
-    LARGE_INTEGER cert_date = { 0 };
-    LARGE_INTEGER check_date = { 0 };
-    LONG days = 0;
-    BOOLEAN node_lock = TRUE;
-    BOOLEAN node_pass = TRUE;
-
     Verify_CertInfo.State = 1; // clear
 	Verify_CertInfo.locked = 1;
     Verify_CertInfo.type = eCertEternal;
@@ -578,96 +504,9 @@ _FX NTSTATUS KphValidateCertificate()
 	Verify_CertInfo.outdated = 0;
 	Verify_CertInfo.active = 1;
 	Verify_CertInfo.lock_req = 0;
-
-    if(!NT_SUCCESS(status = MyInitHash(&hashObj)))
-        goto CleanupExit;
-
-    //
-    // read (Home Path)\Certificate.dat
-    //
-
-    path_len = wcslen(Driver_HomePathDos) * sizeof(WCHAR);
-    path_len += 64;     // room for \Certificate.dat
-    path = Mem_Alloc(Driver_Pool, path_len);
-    line = Mem_Alloc(Driver_Pool, line_size);
-    temp = Mem_Alloc(Driver_Pool, line_size);
-    if (!path || !line || !temp) {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        goto CleanupExit;
-    }
-
-    Verify_CertInfo.active = 1;
-
-    if (!type && level) { // fix for some early hand crafted contributor certificates
-        type = level;
-        level = NULL;
-    }
-
-
-    TIME_FIELDS timeFiled = { 0 };
-    if (CertDbg) {
-        RtlTimeToTimeFields(&cert_date, &timeFiled);
-        DbgPrint("Sbie Cert date: %02d.%02d.%d +%d\n", timeFiled.Day, timeFiled.Month, timeFiled.Year, days);
-
-        if (check_date.QuadPart != 0) {
-            RtlTimeToTimeFields(&check_date, &timeFiled);
-            DbgPrint("Sbie Check date: %02d.%02d.%d\n", timeFiled.Day, timeFiled.Month, timeFiled.Year);
-        }
-    }
-
-    if (!check_date.QuadPart) // a freshly created cert may hot have yet been checked
-        check_date.QuadPart = cert_date.QuadPart;
-
-    LARGE_INTEGER BuildDate = { 0 };
-    KphGetBuildDate(&BuildDate);
-
-    if (CertDbg) {
-        RtlTimeToTimeFields(&BuildDate, &timeFiled);
-        if (CertDbg) DbgPrint("Sbie Build date: %02d.%02d.%d\n", timeFiled.Day, timeFiled.Month, timeFiled.Year);
-    }
-
-    LARGE_INTEGER UtcTime;
-    //LARGE_INTEGER LocalTime;
-    KeQuerySystemTime(&UtcTime);
-    //ExSystemTimeToLocalTime(&UtcTime, &LocalTime);
-    if (CertDbg) {
-        //RtlTimeToTimeFields(&LocalTime, &timeFiled);
-        RtlTimeToTimeFields(&UtcTime, &timeFiled);
-        DbgPrint("Sbie Current UTC time: %02d:%02d:%02d %02d.%02d.%d\n"
-            , timeFiled.Hour, timeFiled.Minute, timeFiled.Second, timeFiled.Day, timeFiled.Month, timeFiled.Year);
-    }
-
-    if (!type && level) { // fix for some early hand crafted contributor certificates
-        type = level;
-        level = NULL;
-    }
-
-
-    LARGE_INTEGER expiration_date = { 0 };
     BOOLEAN bNoCR = TRUE;
-    expiration_date.QuadPart = -1; // at the end of time (never)
 
-
-CleanupExit:
-    if(CertDbg)     DbgPrint("Sbie Cert status: %08x; active: %d\n", status, Verify_CertInfo.active);
-
-
-    if(path)        Mem_Free(path, path_len);    
-    if(line)        Mem_Free(line, line_size);
-    if(temp)        Mem_Free(temp, line_size);
-
-    if (type)       Mem_FreeString(type);
-    if (level)      Mem_FreeString(level);
-    if (options)    Mem_FreeString(options);
-    if (key)        Mem_FreeString(key);
-
-                    MyFreeHash(&hashObj);
-    if(hash)        ExFreePoolWithTag(hash, 'vhpK');
-    if(signature)   Mem_Free(signature, signatureSize);
-
-    if(stream)      Stream_Close(stream);
-
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 
