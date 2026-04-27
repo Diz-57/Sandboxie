@@ -4709,7 +4709,10 @@ void CSandMan::OnAbout()
 
 		QString CertInfo;
 
-		CertInfo = tr("This copy of Sandboxie-Plus is certified for: %1").arg("moonqianqiu");
+		if (!g_Certificate.isEmpty())
+			CertInfo = tr("This copy of Sandboxie-Plus is certified for: %1").arg(GetArguments(g_Certificate, L'\n', L':').value("NAME"));
+		else
+			CertInfo = tr("Sandboxie-Plus is free for personal and non-commercial use.");
 
 		QString SbiePath = theAPI->GetSbiePath();
 
